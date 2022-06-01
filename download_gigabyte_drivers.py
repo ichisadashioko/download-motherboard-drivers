@@ -24,30 +24,34 @@ MAX_CACHE_SIZE_BYTES = 16777216  # 16MB
 
 
 def get_headers_content(md5_size_key: str):
-    cache_filepath = os.path.join(HEADER_CONTENT_CACHE_DIR, md5_size_key)
+    cache_filename = f'{md5_size_key}.gzip'
+    cache_filepath = os.path.join(HEADER_CONTENT_CACHE_DIR, cache_filename)
     if not os.path.exists(cache_filepath):
         return None
 
     if not os.path.isfile(cache_filepath):
         return None
 
-    content_bs = open(cache_filepath, 'rb').read()
-    return content_bs
+    with gzip.open(cache_filepath, 'rb') as infile:
+        content_bs = infile.read()
+        return content_bs
 
 
 def get_body_content(md5_size_key: str):
-    cache_filepath = os.path.join(BODY_CONTENT_CACHE_DIR, md5_size_key)
+    cache_filename = f'{md5_size_key}.gzip'
+    cache_filepath = os.path.join(BODY_CONTENT_CACHE_DIR, cache_filename)
     if not os.path.exists(cache_filepath):
         return None
 
     if not os.path.isfile(cache_filepath):
         return None
 
-    content_bs = open(cache_filepath, 'rb').read()
-    return content_bs
+    with gzip.open(cache_filepath, 'rb') as infile:
+        content_bs = infile.read()
+        return content_bs
 
 
-def get_cache_request(
+def get_cached_response(
     url: str,
     method='GET',
     verbose=True,
@@ -91,33 +95,41 @@ def get_cache_request(
                 # url, method, status_code, request_time_ns, header_content_md5-size, body_content_md5-size
                 if len(cell_list) < 6:
                     continue
-
+                ########################################################
                 quoted_url = cell_list[0]
                 unquoted_url = urllib.parse.unquote(quoted_url)
                 if unquoted_url != url:
                     continue
-
+                ########################################################
                 quoted_method = cell_list[1]
                 unquoted_method = urllib.parse.unquote(quoted_method)
                 if unquoted_method != method:
                     continue
-
+                ########################################################
                 quoted_status_code = cell_list[2]
                 unquoted_status_code = urllib.parse.unquote(quoted_status_code)
                 status_code = int(unquoted_status_code)
-
+                ########################################################
                 quoted_request_time_ns = cell_list[3]
                 unquoted_request_time_ns = urllib.parse.unquote(quoted_request_time_ns)
                 request_time_ns = int(unquoted_request_time_ns)
-
+                ########################################################
                 quoted_header_content_md5_size_key = cell_list[4]
-                unquoted_header_content_md5_size_key = urllib.parse.unquote(quoted_header_content_md5_size)
-                # get headers from cache
-                header_content_bs = get_headers_content(unquoted_header_content_md5_size_key)
+                if len(quoted_header_content_md5_size_key) == 0:
+                    header_content_bs = None
+                else:
+                    unquoted_header_content_md5_size_key = urllib.parse.unquote(quoted_header_content_md5_size)
+                    # get headers from cache
+                    header_content_bs = get_headers_content(unquoted_header_content_md5_size_key)
+                ########################################################
                 quoted_body_content_md5_size_key = cell_list[5]
-                unquoted_body_content_md5_size_key = urllib.parse.unquote(quoted_body_content_md5_size)
-                # get body from cache
-                body_content_bs = get_body_content(unquoted_body_content_md5_size_key)
+                if len(quoted_body_content_md5_size_key) == 0:
+                    body_content_bs = None
+                else:
+                    unquoted_body_content_md5_size_key = urllib.parse.unquote(quoted_body_content_md5_size)
+                    # get body from cache
+                    body_content_bs = get_body_content(unquoted_body_content_md5_size_key)
+                ########################################################
 
                 return {
                     'url': url,
@@ -153,18 +165,19 @@ def store_header_content(
             normalized_header_content += f'\n{header_line}'
 
     normalized_header_content_bs = normalized_header_content.encode('utf-8')
+    header_content_size = len(normalized_header_content_bs)
     if header_content_size == 0:
         return None
 
     header_content_md5_hash = hashlib.md5(normalized_header_content_bs).hexdigest()
-    header_content_size = len(normalized_header_content_bs)
     header_content_md5_size_key = f'{header_content_md5_hash}-{header_content_size}'
-    header_content_cache_filepath = os.path.join(HEADER_CONTENT_CACHE_DIR, header_content_md5_size_key)
+    cache_filename = f'{header_content_md5_size_key}.gzip'
+    cache_filepath = os.path.join(HEADER_CONTENT_CACHE_DIR, cache_filename)
 
-    if not os.path.exists(header_content_cache_filepath):
+    if not os.path.exists(cache_filepath):
         if not os.path.exists(HEADER_CONTENT_CACHE_DIR):
             os.makedirs(HEADER_CONTENT_CACHE_DIR)
-        with open(header_content_cache_filepath, 'wb') as outfile:
+        with gzip.open(cache_filepath, 'wb') as outfile:
             outfile.write(normalized_header_content_bs)
 
     return header_content_md5_size_key
@@ -173,21 +186,51 @@ def store_header_content(
 def store_body_content(
     body_content_bs: bytes,
 ):
+    body_content_size = len(body_content_bs)
     if body_content_size == 0:
         return None
 
     body_content_md5_hash = hashlib.md5(body_content_bs).hexdigest()
-    body_content_size = len(body_content_bs)
     body_content_md5_size_key = f'{body_content_md5_hash}-{body_content_size}'
-    body_content_cache_filepath = os.path.join(BODY_CONTENT_CACHE_DIR, body_content_md5_size_key)
+    cache_filename = f'{body_content_md5_size_key}.gzip'
+    cache_filepath = os.path.join(BODY_CONTENT_CACHE_DIR, cache_filename)
 
-    if not os.path.exists(body_content_cache_filepath):
+    if not os.path.exists(cache_filepath):
         if not os.path.exists(BODY_CONTENT_CACHE_DIR):
             os.makedirs(BODY_CONTENT_CACHE_DIR)
-        with open(body_content_cache_filepath, 'wb') as outfile:
+
+        with gzip.open(cache_filepath, 'wb') as outfile:
             outfile.write(body_content_bs)
 
     return body_content_md5_size_key
+
+
+def store_response(
+    url: str,
+    method: str,
+    request_time_ns: int,
+    status_code: int,
+    headers: dict,
+    body_content_bs: bytes,
+):
+    header_content_md5_size_key = store_header_content(headers)
+    body_content_md5_size_key = store_body_content(body_content_bs)
+
+    quoted_url = urllib.parse.quote(url)
+    quoted_method = urllib.parse.quote(method)
+    quoted_request_time_ns = urllib.parse.quote(str(request_time_ns))
+    quoted_status_code = urllib.parse.quote(str(status_code))
+    if header_content_md5_size_key is None:
+        quoted_header_content_md5_size_key = ''
+    else:
+        quoted_header_content_md5_size_key = urllib.parse.quote(header_content_md5_size_key)
+
+    if body_content_md5_size_key is None:
+        quoted_body_content_md5_size_key = ''
+    else:
+        quoted_body_content_md5_size_key = urllib.parse.quote(body_content_md5_size_key)
+
+    # TODO
 
 ### END CACHE MANAGEMENT ###############################################
 ########################################################################
